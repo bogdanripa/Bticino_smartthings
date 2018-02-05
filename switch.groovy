@@ -27,10 +27,11 @@ metadata {
 
 	tiles (scale: 2) {
         standardTile("switch", "device.switch", width: 2, height: 2, canChangeIcon: true) {
-            state "off", label: '${currentValue}', action: "switch.on",
-                  icon: "st.switches.switch.off", backgroundColor: "#ffffff"
-            state "on", label: '${currentValue}', action: "switch.off",
-                  icon: "st.switches.switch.on", backgroundColor: "#00a0dc"
+            state "loading", label:'Loading', icon:"st.switches.switch.off", backgroundColor:"#ffffff", nextState: "off"
+            state "off", label:'Off', action:"switch.on", icon:"st.switches.switch.off", backgroundColor:"#ffffff", nextState:"turningOn"
+            state "on", label:'On', action:"switch.off", icon:"st.switches.switch.on", backgroundColor:"#00a0dc", nextState:"turningOff"
+            state "turningOn", label:'Turning on', icon:"st.switches.switch.on", backgroundColor:"#00a0dc", nextState: "turningOff"
+            state "turningOff", label:'Turning off', icon:"st.switches.switch.off", backgroundColor:"#ffffff", nextState: "turningOn"
         }
         main ("switch")
         details ("switch")
@@ -57,39 +58,42 @@ def initialize() {
 	log.debug "Initialize"
     // initialize counter
     state.auth_token = ""
+    sendEvent(name: "switch", value: "loading") 
+    runEvery1Minute(refreshTheState)
+    refreshTheState()
 }
 
 def parse(description) {
 	log.debug "Parsing..." + description
 }
 
-def checkAuth() {
+def checkAuth(cb) {
 	if (state.auth_token) {
-    	sendCommand()
+    	callFunction(cb)
     } else {
         def params = [
             uri: 'https://www.myhomeweb.com',
             path: '/mhp/users/sign_in',
             body: ["username": user,"pwd": pass,"registrationId":"1"]
         ]
-        asynchttp_v1.post(processAuthResponse, params)
+        asynchttp_v1.post(processAuthResponse, params, [cb: cb])
     }
 }
 
 def processAuthResponse(response, data) {
     if (response.hasError()) {
         log.error "Response has error: ${response.getErrorMessage()}"
-        log.error data
     } else {
         state.auth_token = response.getHeaders().auth_token
         if (state.auth_token) {
         	log.debug "Loged in!"
-        	sendCommand();
+        	callFunction(data.cb)
         } else {
         	log.error "Auth error: ${response.getErrorMessage()}"
         }
     }
 }
+
 def sendCommand() {
 	log.debug "Sending command..."
 
@@ -101,26 +105,61 @@ def sendCommand() {
         ],
         requestContentType: 'application/json',
         body: '{"cmd":"*1*' + state.command + '*' + sw_id + '##"}'
-    ]    
+    ]
+        
     asynchttp_v1.put(processSwitchResponse, params)
 }
 
 def processSwitchResponse(response, data) {
     if (response.hasError()) {
-        if (response.getStatus() == 401) {
+        if (response.getStatus() == 401 || response.getStatus() == null) {
             // if auth error, re-sign-in and re-do the request
             if (state.auth_tries > 0) {
-                state.auth_tries--
+                state.auth_tries = state.auth_tries - 1
                 state.auth_token = ''
-				checkAuth()
+				checkAuth(sendCommand)
             } else {
-            	log.error "Too many login fails. Giving up."
+            	log.error "Too many API call fails. Giving up."
             }
         } else {
 	        log.error "Response has error: ${response.getErrorMessage()} with status: ${response.getStatus()}"
         }
     } else {
     	log.debug "Command sent."
+        sendEvent(name: "switch", value: state.command?"on":"off") 
+    }
+}
+
+def getTheState() {
+	log.debug "Getting state..."
+
+    def params = [
+        uri: 'https://www.myhomeweb.com',
+        path: '/mhp/mhplaygw/' + gw_id,
+        headers: [
+            "auth_token": state.auth_token
+        ],
+        requestContentType: 'application/json',
+        body: '{"cmd":"*#1*' + sw_id + '##"}'
+    ]
+        
+    asynchttp_v1.put(processGetStateResponse, params)
+}
+
+def processGetStateResponse(response, data) {
+    if (response.hasError()) {
+        log.error "Response has error: ${response.getErrorMessage()} with status: ${response.getStatus()}"
+    } else {
+    	def rData = response.getData()
+        if (rData.contains('{"cmdResult":"*1*1*')) {
+    		sendEvent(name: "switch", value: "on") 
+        } else {
+        	if (rData.contains('{"cmdResult":"*1*0*')) {
+    			sendEvent(name: "switch", value: "off") 
+        	} else {
+	        	log.error "Error parsing " + rData
+            }
+        }
     }
 }
 
@@ -129,12 +168,29 @@ def on() {
 	log.debug "Executing 'on'"
     state.auth_tries = 2;
     state.command = 1
-    checkAuth()
+    checkAuth("sendCommand")
 }
 
 def off() {
 	log.debug "Executing 'off'"
     state.auth_tries = 2;
     state.command = 0
-    checkAuth()
+    checkAuth("sendCommand")
+}
+
+def refreshTheState() {
+	log.debug "Every minute"
+    sendEvent(name: "switch", value: "on")
+    checkAuth("getTheState")
+}
+
+def callFunction(fName) {
+	switch (fName) {
+    	case "getTheState":
+        	getTheState()
+            break
+        case "sendCommand":
+        	sendCommand()
+            break
+    }
 }
