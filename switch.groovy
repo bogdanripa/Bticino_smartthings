@@ -58,8 +58,17 @@ def initialize() {
 	log.debug "Initialize"
     // initialize counter
     state.auth_token = ""
+    state.auth_tries = 2
     sendEvent(name: "switch", value: "loading") 
-    runEvery1Minute(refreshTheState)
+    runEvery5Minutes(refreshTheState)
+    
+    Random random = new Random()
+    def min  = random.nextInt()%60
+    def hour = random.nextInt()%12
+    if (min < 0) min = 0 - min
+    if (hour < 0) hour = 0 - hour
+    schedule("0 " + min + " " + hour + " * * ?", refreshTries)
+    
     refreshTheState()
 }
 
@@ -117,7 +126,7 @@ def processSwitchResponse(response, data) {
             if (state.auth_tries > 0) {
                 state.auth_tries = state.auth_tries - 1
                 state.auth_token = ''
-				checkAuth(sendCommand)
+				checkAuth("sendCommand")
             } else {
             	log.error "Too many API call fails. Giving up."
             }
@@ -131,8 +140,6 @@ def processSwitchResponse(response, data) {
 }
 
 def getTheState() {
-	log.debug "Getting state..."
-
     def params = [
         uri: 'https://www.myhomeweb.com',
         path: '/mhp/mhplaygw/' + gw_id,
@@ -178,9 +185,11 @@ def off() {
     checkAuth("sendCommand")
 }
 
+def refreshTries() {
+    state.auth_tries = 2;
+}
+
 def refreshTheState() {
-	log.debug "Every minute"
-    sendEvent(name: "switch", value: "on")
     checkAuth("getTheState")
 }
 
