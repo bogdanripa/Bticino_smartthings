@@ -1,0 +1,27 @@
+{
+  "name": "bticino-smartthings",
+  "version": "1.0.0",
+  "description": "",
+  "main": "proxy.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/bogdanripa/Bticino_smartthings.git"
+  },
+  "keywords": [
+    "biticono",
+    "smartthings",
+    "proxy"
+  ],
+  "author": "Bogdan Ripa",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/bogdanripa/Bticino_smartthings/issues"
+  },
+  "homepage": "https://github.com/bogdanripa/Bticino_smartthings",
+  "dependencies": {
+    "express": "^4.16.3"
+  }
+}
