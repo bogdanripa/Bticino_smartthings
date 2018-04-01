@@ -64,10 +64,15 @@ function bticinoConnect(monitor, light, level) {
 	function statusUpdate(id, level) {
 		if (!settings.elements[id]) {
 			settings.elements[id] = {
-				name: 'Light ' + (Object.keys(settings.elements).length + 1)
+				name: 'Light ' + (Object.keys(settings.elements).length + 1),
+				type: 'switch'
 			};
 		}
 		settings.elements[id].level = level;
+
+		if (settings.elements[id].type == 'switch' && level > 1) {
+			settings.elements[id].type = 'dimmer';
+		}
 
 		cacheSettings();
 	}
@@ -211,7 +216,7 @@ app.post('/lights/:light', function(req, res) {
 	console.log("POST /lights/" + req.params.light);
 	if (settings.elements[req.params.light]) {
 		var success = false;
-		console.log(req.body)
+
 		if (req.body && req.body.level && req.body.level.match(/^\d+$/)) {
 			bticinoConnect(false, req.params.light, req.body.level);
 			success = true;
