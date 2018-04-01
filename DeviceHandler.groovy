@@ -14,11 +14,10 @@
  *
  */
 
-include 'asynchttp_v1'
-
 metadata {
 	definition (name: "Bticino Switch", namespace: "bogdanripa", author: "Bogdan Ripa") {
 		capability "Switch"
+		attribute "status", "string"
 	}
     
 	simulator {
@@ -27,179 +26,99 @@ metadata {
 
 	tiles (scale: 2) {
         standardTile("switch", "device.switch", width: 2, height: 2, canChangeIcon: true) {
-            state "loading", label:'Loading', icon:"st.switches.switch.off", backgroundColor:"#ffffff", nextState: "off"
-            state "off", label:'Off', action:"switch.on", icon:"st.switches.switch.off", backgroundColor:"#ffffff", nextState:"turningOn"
-            state "on", label:'On', action:"switch.off", icon:"st.switches.switch.on", backgroundColor:"#00a0dc", nextState:"turningOff"
-            state "turningOn", label:'Turning on', icon:"st.switches.switch.on", backgroundColor:"#00a0dc", nextState: "turningOff"
-            state "turningOff", label:'Turning off', icon:"st.switches.switch.off", backgroundColor:"#ffffff", nextState: "turningOn"
+//            state "loading", label:'Loading', icon:"st.switches.switch.off", backgroundColor:"#ffffff", nextState: "off"
+            state "off", label:'Off', action:"switch.on", icon:"st.switches.switch.off", backgroundColor:"#ffffff"//, nextState:"turningOn"
+            state "on", label:'On', action:"switch.off", icon:"st.switches.switch.on", backgroundColor:"#00a0dc"//, nextState:"turningOff"
+/*            state "turningOn", label:'Turning on', icon:"st.switches.switch.on", backgroundColor:"#00a0dc", nextState: "turningOff"
+            state "turningOff", label:'Turning off', icon:"st.switches.switch.off", backgroundColor:"#ffffff", nextState: "turningOn"*/
+            state "error", label:'Error', action:"switch.off", icon:"st.switches.switch.off", backgroundColor:"#ff0000", nextState: "off"
         }
         main ("switch")
         details ("switch")
     }
     
 	preferences {
-		input "user", "text", title: "Username", required: true
-        input "pass", "password", title: "Password", required: true
-        input "gw_id", "number", title: "Gateway", required: true
-        input "sw_id", "text", title: "Identifier", required: true
+        input "sw_id", "text", title: "Identifier", required: false
 	}
 }
 
+def initialSetup(gw, device_id, level) {
+    log.debug "Initial level: " + level + " for " + device_id + " calling " + gw
+	state.sw_id = device_id
+    state.level = level
+    state.gw = gw
+    sendEvent(name: "switch", value: level=='0'?"off":"on") 
+}
+
+def setLevel(level) {
+    state.level = level
+    sendEvent(name: "switch", value: level=='0'?"off":"on") 
+}
+
+def setGW(gw) {
+    state.gw = gw
+}
+
 def installed() {
-    initialize()
+    return initialize()
 }
 
 def updated() {
     //unsubscribe()
-    initialize()
+    return initialize()
 }
 
 def initialize() {
-	log.debug "Initialize"
-    // initialize counter
-    state.auth_token = ""
-    state.auth_tries = 2
-    sendEvent(name: "switch", value: "loading") 
-    runEvery5Minutes(refreshTheState)
-    
-    Random random = new Random()
-    def min  = random.nextInt()%60
-    def hour = random.nextInt()%12
-    if (min < 0) min = 0 - min
-    if (hour < 0) hour = 0 - hour
-    schedule("0 " + min + " " + hour + " * * ?", refreshTries)
-    
-    refreshTheState()
-}
-
-def parse(description) {
-	log.debug "Parsing..." + description
-}
-
-def checkAuth(cb) {
-	if (state.auth_token) {
-    	callFunction(cb)
-    } else {
-        def params = [
-            uri: 'https://www.myhomeweb.com',
-            path: '/mhp/users/sign_in',
-            body: ["username": user,"pwd": pass,"registrationId":"1"]
-        ]
-        asynchttp_v1.post(processAuthResponse, params, [cb: cb])
-    }
-}
-
-def processAuthResponse(response, data) {
-    if (response.hasError()) {
-        log.error "Response has error: ${response.getErrorMessage()}"
-    } else {
-        state.auth_token = response.getHeaders().auth_token
-        if (state.auth_token) {
-        	log.debug "Loged in!"
-        	callFunction(data.cb)
-        } else {
-        	log.error "Auth error: ${response.getErrorMessage()}"
-        }
-    }
+	log.debug "Initialize Device Handler"
+    //state.level = '0'
+    //state.gw = ''
+    //sendEvent(name: "switch", value: "loading") 
 }
 
 def sendCommand() {
-	log.debug "Sending command..."
+	def id = sw_id ? sw_id : state.sw_id
+	log.debug "Sending command on " + state.gw + " for " + id
 
-    def params = [
-        uri: 'https://www.myhomeweb.com',
-        path: '/mhp/mhplaygw/' + gw_id,
-        headers: [
-            "auth_token": state.auth_token
-        ],
-        requestContentType: 'application/json',
-        body: '{"cmd":"*1*' + state.command + '*' + sw_id + '##"}'
-    ]
-        
-    asynchttp_v1.put(processSwitchResponse, params)
-}
+	if (id && state.gw != '') {
+        def result = new physicalgraph.device.HubAction([
+            method: "POST",
+            path: "/lights/" + id.replaceAll(/#/, '%23'),
+            headers: [
+                "HOST": state.gw,
+                "Content-Type": "application/x-www-form-urlencoded"
+            ],
+            body: [level: state.level]], null, [callback: processSwitchResponse]
+        )
 
-def processSwitchResponse(response, data) {
-    if (response.hasError()) {
-        if (response.getStatus() == 401 || response.getStatus() == null) {
-            // if auth error, re-sign-in and re-do the request
-            if (state.auth_tries > 0) {
-                state.auth_tries = state.auth_tries - 1
-                state.auth_token = ''
-				checkAuth("sendCommand")
-            } else {
-            	log.error "Too many API call fails. Giving up."
-            }
-        } else {
-	        log.error "Response has error: ${response.getErrorMessage()} with status: ${response.getStatus()}"
-        }
-    } else {
-    	log.debug "Command sent."
-        sendEvent(name: "switch", value: state.command?"on":"off") 
+        return result
     }
 }
 
-def getTheState() {
-    def params = [
-        uri: 'https://www.myhomeweb.com',
-        path: '/mhp/mhplaygw/' + gw_id,
-        headers: [
-            "auth_token": state.auth_token
-        ],
-        requestContentType: 'application/json',
-        body: '{"cmd":"*#1*' + sw_id + '##"}'
-    ]
-        
-    asynchttp_v1.put(processGetStateResponse, params)
-}
-
-def processGetStateResponse(response, data) {
-    if (response.hasError()) {
-        log.error "Response has error: ${response.getErrorMessage()} with status: ${response.getStatus()}"
+def processSwitchResponse(response) {
+    if (response.status != 200) {
+        sendEvent(name: "switch", value: "error")
+        sendEvent(name: "status", value: "Response has error: ${response.body} with status: ${response.status}")
     } else {
-    	def rData = response.getData()
-        if (rData.contains('{"cmdResult":"*1*1*')) {
-    		sendEvent(name: "switch", value: "on") 
-        } else {
-        	if (rData.contains('{"cmdResult":"*1*0*')) {
-    			sendEvent(name: "switch", value: "off") 
-        	} else {
-	        	log.error "Error parsing " + rData
-            }
-        }
+    	log.debug "Command sent."
+        sendEvent(name: "switch", value: state.level=='0'?"off":"on") 
     }
 }
 
 // handle commands
 def on() {
 	log.debug "Executing 'on'"
-    state.auth_tries = 2;
-    state.command = 1
-    checkAuth("sendCommand")
+    sendEvent(name: "status", value: "Executing 'on'")
+    state.level = '1'
+    return sendCommand()
 }
 
 def off() {
 	log.debug "Executing 'off'"
-    state.auth_tries = 2;
-    state.command = 0
-    checkAuth("sendCommand")
+    sendEvent(name: "status", value: "Executing 'off'")
+    state.level = '0'
+    return sendCommand()
 }
 
-def refreshTries() {
-    state.auth_tries = 2;
-}
-
-def refreshTheState() {
-    checkAuth("getTheState")
-}
-
-def callFunction(fName) {
-	switch (fName) {
-    	case "getTheState":
-        	getTheState()
-            break
-        case "sendCommand":
-        	sendCommand()
-            break
-    }
+def loading() {
+	log.debug "Loading..."
 }
