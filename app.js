@@ -4,7 +4,6 @@ const express = require('express');
 var bodyParser = require('body-parser');
 var pConnect;
 
-
 var app = express();
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
@@ -16,12 +15,14 @@ var settings = {
 	elements: {}
 };
 
+var settingsFile = process.argv[1].replace(/\/[^\/]+$/, "/settings.json");
+
 var connected = false;
 
 function loadSettings() {
-	fs.exists('settings.json', function(exists){
+	fs.exists(settingsFile, function(exists){
 		if (exists) {
-			fs.readFile('settings.json', function readFileCallback(err, data) {
+			fs.readFile(settingsFile, function readFileCallback(err, data) {
 				if (err){
 					console.log("Error reading 'settings.json': " + err);
 				} else {
@@ -38,7 +39,7 @@ function loadSettings() {
 
 function cacheSettings() {
 	var json = JSON.stringify(settings, null, '\t');
-	fs.writeFile('settings.json', json);
+	fs.writeFile(settingsFile, json);
 }
 
 loadSettings();
@@ -155,9 +156,11 @@ function bticinoConnect(monitor, light, level) {
 	return client;
 }
 
-app.get('/', (req, res) => res.send('Hello World!'))
+app.get('/', function(req, res) {
+	res.send('Hello World!');
+});
 
-app.post('/set', (req, res) => {
+app.post('/set', function(req, res) {
 	var success = false;
 
 	if (req.body && req.body.ip) {
@@ -184,7 +187,7 @@ app.post('/set', (req, res) => {
 
 });
 
-app.get('/lights/', (req, res) => {
+app.get('/lights/', function(req, res) {
 	console.log("GET /lights/");
 	if (settings.elements) {
 		res.setHeader('Content-Type', 'application/json');
@@ -194,7 +197,7 @@ app.get('/lights/', (req, res) => {
 	}
 });
 
-app.get('/lights/:light', (req, res) => {
+app.get('/lights/:light', function(req, res) {
 	console.log("GET /lights/" + req.params.light);
 	if (settings.elements[req.params.light]) {
 		res.setHeader('Content-Type', 'application/json');
@@ -204,7 +207,7 @@ app.get('/lights/:light', (req, res) => {
 	}
 });
 
-app.post('/lights/:light', (req, res) => {
+app.post('/lights/:light', function(req, res) {
 	console.log("POST /lights/" + req.params.light);
 	if (settings.elements[req.params.light]) {
 		var success = false;
@@ -230,7 +233,7 @@ app.post('/lights/:light', (req, res) => {
 	}
 });
 
-app.post('/connect', (req, res) => {
+app.post('/connect', function(req, res) {
 	if (pConnect) {
 		pConnect.destroy();
 	}
@@ -242,11 +245,11 @@ app.post('/connect', (req, res) => {
 	}
 });
 
-app.get('/status', (req, res) => {
+app.get('/status', function(req, res) {
 	res.send(connected?"Connected":"Disconnected");
 });
 
-app.post('/disconnect', (req, res) => {
+app.post('/disconnect', function(req, res) {
 	if (pConnect) {
 		pConnect.destroy();
 		pConnect = null;		
@@ -266,4 +269,4 @@ function refreshConnection() {
 
 setInterval(refreshConnection, 1000*60*60);
 
-app.listen(8080, "0.0.0.0", () => console.log('Listening on port 8080!'));
+app.listen(8080, "0.0.0.0", function() {console.log('Listening on port 8080!')});
