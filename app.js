@@ -19,6 +19,11 @@ var settingsFile = process.argv[1].replace(/\/[^\/]+$/, "/settings.json");
 
 var connected = false;
 
+function consolelog(msg) {
+	var d = new Date();
+	console.log();
+}
+
 function loadSettings() {
 	fs.exists(settingsFile, function(exists){
 		if (exists) {
