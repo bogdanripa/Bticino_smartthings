@@ -17,7 +17,10 @@
 metadata {
 	definition (name: "Bticino Switch", namespace: "bogdanripa", author: "Bogdan Ripa") {
 		capability "Switch"
+		capability "Switch Level"
+		capability "Refresh"
 		attribute "status", "string"
+		command "refresh"
 	}
     
 	simulator {
@@ -25,16 +28,18 @@ metadata {
 	}
 
 	tiles (scale: 2) {
-        standardTile("switch", "device.switch", width: 2, height: 2, canChangeIcon: true) {
-//            state "loading", label:'Loading', icon:"st.switches.switch.off", backgroundColor:"#ffffff", nextState: "off"
-            state "off", label:'Off', action:"switch.on", icon:"st.switches.switch.off", backgroundColor:"#ffffff"//, nextState:"turningOn"
-            state "on", label:'On', action:"switch.off", icon:"st.switches.switch.on", backgroundColor:"#00a0dc"//, nextState:"turningOff"
-/*            state "turningOn", label:'Turning on', icon:"st.switches.switch.on", backgroundColor:"#00a0dc", nextState: "turningOff"
-            state "turningOff", label:'Turning off', icon:"st.switches.switch.off", backgroundColor:"#ffffff", nextState: "turningOn"*/
-            state "error", label:'Error', action:"switch.off", icon:"st.switches.switch.off", backgroundColor:"#ff0000", nextState: "off"
-        }
-        main ("switch")
-        details ("switch")
+		multiAttributeTile(name:"switch", type: "lighting", width: 6, height: 4, canChangeIcon: true) {
+			tileAttribute ("device.switch", key: "PRIMARY_CONTROL") {
+				attributeState "on", label:'${name}', action:"switch.off", icon:"st.lights.philips.hue-single", backgroundColor:"#00A0DC"
+				attributeState "off", label:'${name}', action:"switch.on", icon:"st.lights.philips.hue-single", backgroundColor:"#FFFFFF"
+				attributeState "error", label:'${name}', action:"switch.off", icon:"st.lights.philips.hue-single", backgroundColor:"#FFA0DC"
+			}
+			tileAttribute ("device.level", key: "SLIDER_CONTROL") {
+				attributeState "level", action:"switch level.setLevel"
+			}
+		}
+        main(["switch"])
+        details(["switch"])
     }
     
 	preferences {
@@ -43,16 +48,37 @@ metadata {
 }
 
 def initialSetup(gw, device_id, level) {
-    log.debug "Initial level: " + level + " for " + device_id + " calling " + gw
 	state.sw_id = device_id
-    state.level = level
     state.gw = gw
-    sendEvent(name: "switch", value: level=='0'?"off":"on") 
+	if (level == 1) {
+    	level = 10
+    }
+    sendEvent(name: "switch", value: level==0?"off":"on")
+    sendEvent(name: "level", value: level*10)
+
+    log.debug "Initial level: " + level + " for " + state.sw_id + " calling " + state.gw
+}
+
+def updateLevel(level) {
+	if (level == 1) {
+    	level = 10
+    }
+    sendEvent(name: "switch", value: level==0?"off":"on") 
+    sendEvent(name: "level", value: level*10)
+
+    log.debug "Update level: " + level + " for " + state.sw_id + " calling " + state.gw
 }
 
 def setLevel(level) {
-    state.level = level
+	if (level < 20 && level > 0) {
+        	level = 20
+    }
+	level = Integer.valueOf((level / 10).intValue())
+	log.debug "Executing 'userSetLevel'"
+    sendEvent(name: "status", value: "Executing 'userSetLevel'")
     sendEvent(name: "switch", value: level=='0'?"off":"on") 
+    sendEvent(name: "level", value: level*10)
+    return sendCommand()
 }
 
 def setGW(gw) {
@@ -77,9 +103,24 @@ def initialize() {
 
 def sendCommand() {
 	def id = sw_id ? sw_id : state.sw_id
-	log.debug "Sending command on " + state.gw + " for " + id
+    def level = device.latestValue("level") as Integer
+    def sw = device.latestValue("switch") as String
+    
+    if (sw == 'off') {
+    	level = 0
+    }
+    
+    if (sw == 'on' && level == 0) {
+    	level = 100;
+        sendEvent(name: "level", value: level)
+    }
+
+	log.debug "Set level " + level + " on " + state.gw + " for " + id
 
 	if (id && state.gw != '') {
+        if (level == 100) {
+        	level = 10
+        }
         def result = new physicalgraph.device.HubAction([
             method: "POST",
             path: "/lights/" + id.replaceAll(/#/, '%23'),
@@ -87,7 +128,7 @@ def sendCommand() {
                 "HOST": state.gw,
                 "Content-Type": "application/x-www-form-urlencoded"
             ],
-            body: [level: state.level]], null, [callback: processSwitchResponse]
+            body: [level: '' + level/10]], null, [callback: processSwitchResponse]
         )
 
         return result
@@ -98,9 +139,6 @@ def processSwitchResponse(response) {
     if (response.status != 200) {
         sendEvent(name: "switch", value: "error")
         sendEvent(name: "status", value: "Response has error: ${response.body} with status: ${response.status}")
-    } else {
-    	log.debug "Command sent."
-        sendEvent(name: "switch", value: state.level=='0'?"off":"on") 
     }
 }
 
@@ -108,14 +146,14 @@ def processSwitchResponse(response) {
 def on() {
 	log.debug "Executing 'on'"
     sendEvent(name: "status", value: "Executing 'on'")
-    state.level = '1'
+    sendEvent(name: "switch", value: "on") 
     return sendCommand()
 }
 
 def off() {
 	log.debug "Executing 'off'"
     sendEvent(name: "status", value: "Executing 'off'")
-    state.level = '0'
+    sendEvent(name: "switch", value: "off") 
     return sendCommand()
 }
 

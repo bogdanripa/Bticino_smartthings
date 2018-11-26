@@ -25,12 +25,12 @@ definition(
 
 
 preferences {
-	page(name: "searchTargetSelection", title: "Bticino Lights Search Target", nextPage: "deviceDiscovery") {
+	page(name: "searchTargetSelection", title: "Bticino Search Target", nextPage: "deviceDiscovery") {
 		section("Search Target") {
 			input "searchTarget", "string", title: "Search Target", defaultValue: "192.168.86.162:8080", required: true
 		}
 	}
-	page(name: "deviceDiscovery", title: "Bticino Lights Device Setup", content: "deviceDiscovery")
+	page(name: "deviceDiscovery", title: "Bticino Device Setup", content: "deviceDiscovery")
 }
 
 def deviceDiscovery() {
@@ -42,7 +42,6 @@ def deviceDiscovery() {
 		options["${key}"] = value
 	}
 
-	//ssdpSubscribe()
 	ssdpDiscover()
 
 	return dynamicPage(name: "deviceDiscovery", title: "Discovery Started!", nextPage: "", refreshInterval: 5, install: true, uninstall: true) {
@@ -54,6 +53,11 @@ def deviceDiscovery() {
 
 void ssdpDiscover() {
 	log.debug "Discovering..."
+	ssdpDiscoverLights()
+    ssdpDiscoverShutters()
+}
+
+void ssdpDiscoverLights() {
 	def command = new physicalgraph.device.HubAction([
 		method: "GET",
 		path: "/lights/",
@@ -64,23 +68,36 @@ void ssdpDiscover() {
 	sendHubCommand(command)
 }
 
+void ssdpDiscoverShutters() {
+	def command = new physicalgraph.device.HubAction([
+		method: "GET",
+		path: "/shutters/",
+		headers: [
+			"HOST": searchTarget
+		]], null, [callback: processGetListResponse]
+	)
+	sendHubCommand(command)
+}
+
 void processGetListResponse(response) {
 	def devices = getDevices()
 	response.json.each {
-    	if (devices."${it.key}") {
-        	def d = devices."${it.key}"
+        def d
+        try {
+        	d = devices."${it.key}"
+        } catch(e){}
+    	if (d) {
             d.name = it.value.name
             d.level = it.value.level
+            d.type = it.value.type
         } else {
 	        devices << ["${it.key}": it.value]
         }
         def cd = getChildDevice(it.key)
         if (cd) {
-        	cd.setLevel(it.value.level)
+        	cd.updateLevel(Integer.parseInt(it.value.level))
         }
 	}
-    
-    
 }
 
 def getDevices() {
@@ -130,11 +147,15 @@ def addDevices() {
 
 		if (!d) {
 			log.debug "Creating Bticino Device with id: ${dni} on " + location.hubs[0].id + " calling " + searchTarget
-			d = addChildDevice("bogdanripa", "Bticino Switch", dni, location.hubs[0].id, [
+			def dhName = "Bticino Switch"
+			if (selectedDevice.type == 'shutter') {
+				dhName = "Bticino Shutter"
+			}
+			d = addChildDevice("bogdanripa", dhName, dni, location.hubs[0].id, [
 				"label": selectedDevice.name,
                 "completedSetup": true
 			])
-            d.initialSetup(searchTarget, dni, selectedDevice.level)
+            d.initialSetup(searchTarget, dni, Integer.parseInt(selectedDevice.level))
 		} else {
 			log.debug "Updating Bticino Device with id: ${dni} on " + location.hubs[0].id + " calling " + searchTarget
             d.setGW(searchTarget)
@@ -150,3 +171,64 @@ def addDevices() {
         }
     }
 }
+
+/*
+void ssdpSubscribe() {
+	subscribe(location, "ssdpTerm.${searchTarget}", ssdpHandler)
+}
+
+Map verifiedDevices() {
+	def devices = getVerifiedDevices()
+	def map = [:]
+	devices.each {
+		def value = it.value.name ?: "UPnP Device ${it.value.ssdpUSN.split(':')[1][-3..-1]}"
+		def key = it.value.mac
+		map["${key}"] = value
+	}
+	map
+}
+
+def getVerifiedDevices() {
+	getDevices().findAll{ it.value.verified == true }
+}
+
+def ssdpHandler(evt) {
+	def description = evt.description
+	def hub = evt?.hubId
+
+	def parsedEvent = parseLanMessage(description)
+	parsedEvent << ["hub":hub]
+
+	def devices = getDevices()
+	String ssdpUSN = parsedEvent.ssdpUSN.toString()
+	if (devices."${ssdpUSN}") {
+		def d = devices."${ssdpUSN}"
+		if (d.networkAddress != parsedEvent.networkAddress || d.deviceAddress != parsedEvent.deviceAddress) {
+			d.networkAddress = parsedEvent.networkAddress
+			d.deviceAddress = parsedEvent.deviceAddress
+			def child = getChildDevice(parsedEvent.mac)
+			if (child) {
+				child.sync(parsedEvent.networkAddress, parsedEvent.deviceAddress)
+			}
+		}
+	} else {
+		devices << ["${ssdpUSN}": parsedEvent]
+	}
+}
+
+void deviceDescriptionHandler(physicalgraph.device.HubResponse hubResponse) {
+	def body = hubResponse.xml
+	def devices = getDevices()
+	def device = devices.find { it?.key?.contains(body?.device?.UDN?.text()) }
+	if (device) {
+		device.value << [name: body?.device?.roomName?.text(), model:body?.device?.modelName?.text(), serialNumber:body?.device?.serialNum?.text(), verified: true]
+	}
+}
+
+private Integer convertHexToInt(hex) {
+	Integer.parseInt(hex,16)
+}
+
+private String convertHexToIP(hex) {
+	[convertHexToInt(hex[0..1]),convertHexToInt(hex[2..3]),convertHexToInt(hex[4..5]),convertHexToInt(hex[6..7])].join(".")
+}*/
