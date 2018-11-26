@@ -12,7 +12,8 @@ var settings = {
 	gwIP: '192.168.86.95',
 	gwPort: 20000,
 	gwPwd: '12345',
-	elements: {}
+	lights: {},
+	shutters: {}
 };
 
 var settingsFile = process.argv[1].replace(/\/[^\/]+$/, "/settings.json");
@@ -49,7 +50,7 @@ function cacheSettings() {
 
 loadSettings();
 
-function bticinoConnect(monitor, light, level) {
+function bticinoConnect(monitor, what, id, level) {
 	var messages =[];
 	var rawData = '';
 	var status = 0;
@@ -66,18 +67,31 @@ function bticinoConnect(monitor, light, level) {
 		send('#' + openwebnetAnswer(settings.gwPwd, key));
 	}
 
-	function statusUpdate(id, level) {
-		if (!settings.elements[id]) {
-			settings.elements[id] = {
-				name: 'Light ' + (Object.keys(settings.elements).length + 1),
+	function lightStatusUpdate(id, level) {
+		if (!settings.lights[id]) {
+			settings.lights[id] = {
+				name: 'Light ' + (Object.keys(settings.lights).length + 1),
 				type: 'switch'
 			};
 		}
-		settings.elements[id].level = level;
+		settings.lights[id].level = level;
 
-		if (settings.elements[id].type == 'switch' && level > 1) {
-			settings.elements[id].type = 'dimmer';
+		if (settings.lights[id].type == 'switch' && level > 1) {
+			settings.lights[id].type = 'dimmer';
 		}
+
+		cacheSettings();
+	}
+
+	function shutterStatusUpdate(id, level) {
+		if (level == 0) return;
+		if (!settings.shutters[id]) {
+			settings.shutters[id] = {
+				name: 'Shutter ' + (Object.keys(settings.shutters).length + 1),
+				type: 'shutter'
+			};
+		}
+		settings.shutters[id].level = level;
 
 		cacheSettings();
 	}
@@ -88,7 +102,7 @@ function bticinoConnect(monitor, light, level) {
 	}
 
 	function received(message) {
-		console.log("R: " + message);
+		console.log(" R: " + message);
 	}
 
 	function processMessages() {
@@ -102,12 +116,21 @@ function bticinoConnect(monitor, light, level) {
 				status = 2;
 				authenticate(matches[1]);
 			} else if ((matches = message.match(/^1\*(\d+)\*([\d#]+)$/)) && status == 2) {
-				statusUpdate(matches[2], matches[1]);
+				lightStatusUpdate(matches[2], matches[1]);
+			} else if ((matches = message.match(/^2\*(\d+)\*([\d#]+)$/)) && status == 2) {
+				shutterStatusUpdate(matches[2], matches[1]);
 			} else if (message == '#*1' && status == 2){
 				if (!monitor) {
 					// execure command
 					status = 3;
-					send('1*' + level + '*' + light);
+					switch(what) {
+						case 'light':
+							send('1*' + level + '*' + id);
+							break;
+						case 'shutter':
+							send('2*' + level + '*' + id);
+							break;
+					}
 				} else {
 					connected = true;
 				}
@@ -199,9 +222,19 @@ app.post('/set', function(req, res) {
 
 app.get('/lights/', function(req, res) {
 	console.log("GET /lights/");
-	if (settings.elements) {
+	if (settings.lights) {
 		res.setHeader('Content-Type', 'application/json');
-		res.send(JSON.stringify(settings.elements, null, '\t'));
+		res.send(JSON.stringify(settings.lights, null, '\t'));
+	} else {
+		res.sendStatus(404);
+	}
+});
+
+app.get('/shutters/', function(req, res) {
+	console.log("GET /shutters/");
+	if (settings.shutters) {
+		res.setHeader('Content-Type', 'application/json');
+		res.send(JSON.stringify(settings.shutters, null, '\t'));
 	} else {
 		res.sendStatus(404);
 	}
@@ -209,9 +242,19 @@ app.get('/lights/', function(req, res) {
 
 app.get('/lights/:light', function(req, res) {
 	console.log("GET /lights/" + req.params.light);
-	if (settings.elements[req.params.light]) {
+	if (settings.lights[req.params.light]) {
 		res.setHeader('Content-Type', 'application/json');
-		res.send(JSON.stringify(settings.elements[req.params.light], null, '\t'));
+		res.send(JSON.stringify(settings.lights[req.params.light], null, '\t'));
+	} else {
+		res.sendStatus(404);
+	}
+});
+
+app.get('/shutters/:shutter', function(req, res) {
+	console.log("GET /shutters/" + req.params.shutter);
+	if (settings.shutters[req.params.shutter]) {
+		res.setHeader('Content-Type', 'application/json');
+		res.send(JSON.stringify(settings.shutters[req.params.shutter], null, '\t'));
 	} else {
 		res.sendStatus(404);
 	}
@@ -219,16 +262,42 @@ app.get('/lights/:light', function(req, res) {
 
 app.post('/lights/:light', function(req, res) {
 	console.log("POST /lights/" + req.params.light);
-	if (settings.elements[req.params.light]) {
+	if (settings.lights[req.params.light]) {
 		var success = false;
 
 		if (req.body && req.body.level && req.body.level.match(/^\d+$/)) {
-			bticinoConnect(false, req.params.light, req.body.level);
+			bticinoConnect(false, 'light', req.params.light, req.body.level);
 			success = true;
 		}
 
 		if (req.body && req.body.name) {
-			settings.elements[req.params.light].name = req.body.name;
+			settings.lights[req.params.light].name = req.body.name;
+			cacheSettings();
+			success = true;
+		}
+
+		if (success) {
+			res.sendStatus(200);
+		} else {
+			res.sendStatus(500);
+		}
+	} else {
+		res.sendStatus(404);
+	}
+});
+
+app.post('/shutters/:shutter', function(req, res) {
+	console.log("POST /shutters/" + req.params.shutter);
+	if (settings.shutters[req.params.shutter]) {
+		var success = false;
+
+		if (req.body && req.body.level && req.body.level.match(/^\d+$/)) {
+			bticinoConnect(false, 'shutter', req.params.shutter, req.body.level);
+			success = true;
+		}
+
+		if (req.body && req.body.name) {
+			settings.shutters[req.params.shutter].name = req.body.name;
 			cacheSettings();
 			success = true;
 		}
