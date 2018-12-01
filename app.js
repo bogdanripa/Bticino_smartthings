@@ -1,6 +1,7 @@
 var net = require('net');
 var fs = require('fs');
 const express = require('express');
+const request = require('request');
 var bodyParser = require('body-parser');
 var pConnect;
 
@@ -8,47 +9,33 @@ var app = express();
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
-var settings = {
-	gwIP: '192.168.86.95',
-	gwPort: 20000,
-	gwPwd: '12345',
-	lights: {},
-	shutters: {}
-};
-
 var settingsFile = process.argv[1].replace(/\/[^\/]+$/, "/settings.json");
-
-var connected = false;
-
-function consolelog(msg) {
-	var d = new Date();
-	console.log();
-}
-
-function loadSettings() {
-	fs.exists(settingsFile, function(exists){
-		if (exists) {
-			fs.readFile(settingsFile, function readFileCallback(err, data) {
-				if (err){
-					console.log("Error reading 'settings.json': " + err);
-				} else {
-					settings = JSON.parse(data);
-					pConnect = bticinoConnect(true);
-				}
-			});
- 		} else {
-			cacheSettings();
-			pConnect = bticinoConnect(true);
-		}
-	});
-}
 
 function cacheSettings() {
 	var json = JSON.stringify(settings, null, '\t');
 	fs.writeFile(settingsFile, json);
 }
 
-loadSettings();
+var settings = {
+	gwIP: '192.168.86.95',
+	gwPort: 20000,
+	gwPwd: '12345',
+	lights: {},
+	shutters: {},
+	openWeather: {
+		apiKey: '',
+		lat: '',
+		lon: ''
+	}
+};
+try {
+	settings = require('./settings.json');
+} catch(e) {
+	cacheSettings();
+}
+
+var connected = false;
+
 
 function bticinoConnect(monitor, what, id, level) {
 	var messages =[];
@@ -189,6 +176,8 @@ function bticinoConnect(monitor, what, id, level) {
 	return client;
 }
 
+pConnect = bticinoConnect(true);
+
 app.get('/', function(req, res) {
 	res.send('Hello World!');
 });
@@ -286,13 +275,22 @@ app.post('/lights/:light', function(req, res) {
 	}
 });
 
+function setShutterLevel(shutter, level, force) {
+	if (force || settings.shutters[shutter].level != level) {
+		console.log("Setting " + shutter + " shutter level to " + level);
+		bticinoConnect(false, 'shutter', shutter, level);
+                settings.shutters[shutter].level = level;
+                cacheSettings();
+	}
+}
+
 app.post('/shutters/:shutter', function(req, res) {
 	console.log("POST /shutters/" + req.params.shutter);
 	if (settings.shutters[req.params.shutter]) {
 		var success = false;
 
 		if (req.body && req.body.level && req.body.level.match(/^\d+$/)) {
-			bticinoConnect(false, 'shutter', req.params.shutter, req.body.level);
+			setShutterLevel(req.params.shutter, req.body.level, true);
 			success = true;
 		}
 
@@ -346,6 +344,37 @@ function refreshConnection() {
 	
 }
 
-setInterval(refreshConnection, 1000*60*60);
+setInterval(refreshConnection, 1000*60*60); // every hour
+
+function refreshWeather() {
+	var url = 'https://api.openweathermap.org/data/2.5/weather?lat='+settings.openWeather.lat+'&lon='+settings.openWeather.lon+'&appid=' + settings.openWeather.apiKey;
+	request(url, { json: true }, (err, res, body) => {
+		if (err) { 
+			return console.log(err);
+		}
+		var shouldClose = false;
+		if (!body.weather) {
+			console.log(JSON.stringify(body));
+			return;
+		}
+		body.weather.forEach( (wo) => {
+			switch(parseInt(wo.id/100)) {
+				case 2:
+				case 3:
+				case 5:
+				case 6:
+					shouldClose = true;
+			}
+		});
+
+		for (var shutter in settings.shutters) {
+			setShutterLevel(shutter, shouldClose?2:1, false);
+		}
+
+	});
+}
+
+setInterval(refreshWeather, 1000*60*5); // every 5 minutes
+refreshWeather();
 
 app.listen(8080, "0.0.0.0", function() {console.log('Listening on port 8080!')});

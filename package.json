@@ -23,6 +23,7 @@
   "homepage": "https://github.com/bogdanripa/Bticino_smartthings",
   "dependencies": {
     "body-parser": "^1.18.2",
-    "express": "^4.16.3"
+    "express": "^4.16.3",
+    "request": "^2.88.0"
   }
 }
