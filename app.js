@@ -71,13 +71,29 @@ function bticinoConnect(monitor, what, id, level) {
 	}
 
 	function shutterStatusUpdate(id, level) {
-		if (level == 0) return;
 		if (!settings.shutters[id]) {
 			settings.shutters[id] = {
 				name: 'Shutter ' + (Object.keys(settings.shutters).length + 1),
-				type: 'shutter'
+				type: 'shutter',
+				level: -1
 			};
 		}
+
+		switch(level) {
+			case 1:
+				level = 0;
+				break;
+			case 2:
+				level = 100;
+				break;
+			case 0:
+				if (settings.shutters[id].level == 0 || settings.shutters[id].level == 100) {
+					level = 50;
+				} else {
+					level = settings.shutters[id].level;
+				}
+		}
+
 		settings.shutters[id].level = level;
 
 		cacheSettings();
@@ -115,7 +131,18 @@ function bticinoConnect(monitor, what, id, level) {
 							send('1*' + level + '*' + id);
 							break;
 						case 'shutter':
-							send('2*' + level + '*' + id);
+							var bLevel;
+							switch(level) {
+								case 0:
+									bLevel = 1;
+									break;
+								case 100:
+									bLevel = 2;
+									break;
+								default:
+									blevel = 0;
+							}
+							send('2*' + bLevel + '*' + id);
 							break;
 					}
 				} else {
@@ -368,7 +395,7 @@ function refreshWeather() {
 		});
 
 		for (var shutter in settings.shutters) {
-			setShutterLevel(shutter, shouldClose?2:1, false);
+			setShutterLevel(shutter, shouldClose?100:0, false);
 		}
 
 	});
