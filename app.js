@@ -415,8 +415,10 @@ function refreshWeather() {
 			}
 		});
 
-		for (var shutter in settings.shutters) {
-			setShutterLevel(shutter, shouldClose?100:0, false);
+		if (shouldClose) {
+			Object.keys(settings.shutters).forEach((shutter) => {
+				setShutterLevel(shutter, 0, false);
+			});
 		}
 
 	});
