@@ -22,6 +22,7 @@ var settings = {
 	gwPwd: '12345',
 	lights: {},
 	shutters: {},
+	shutterCycleSeconds: 10,
 	openWeather: {
 		apiKey: '',
 		lat: '',
@@ -81,10 +82,10 @@ function bticinoConnect(monitor, what, id, level) {
 
 		switch(level) {
 			case 1:
-				level = 0;
+				level = 100;
 				break;
 			case 2:
-				level = 100;
+				level = 0;
 				break;
 			case 0:
 				if (settings.shutters[id].level == 0 || settings.shutters[id].level == 100) {
@@ -134,10 +135,10 @@ function bticinoConnect(monitor, what, id, level) {
 							var bLevel;
 							switch(level) {
 								case 0:
-									bLevel = 1;
+									bLevel = 2;
 									break;
 								case 100:
-									bLevel = 2;
+									bLevel = 1;
 									break;
 								default:
 									blevel = 0;
@@ -305,9 +306,29 @@ app.post('/lights/:light', function(req, res) {
 function setShutterLevel(shutter, level, force) {
 	if (force || settings.shutters[shutter].level != level) {
 		console.log("Setting " + shutter + " shutter level to " + level);
-		bticinoConnect(false, 'shutter', shutter, level);
-                settings.shutters[shutter].level = level;
-                cacheSettings();
+		switch(level) {
+			case 0:
+			case 100:
+				bticinoConnect(false, 'shutter', shutter, level);
+				break;
+			default:
+				// partial
+				if (settings.shutters[shutter].level > level) {
+					// open a bit
+					bticinoConnect(false, 'shutter', shutter, 100);
+					setTimeout(function() {
+						bticinoConnect(false, 'shutter', shutter, level);
+					}, (settings.shutters[shutter].level - level)/100*settings.shutterCycleSeconds*1000);
+				} else {
+					// close a bit
+					bticinoConnect(false, 'shutter', shutter, 0);
+					setTimeout(function() {
+						bticinoConnect(false, 'shutter', shutter, level);
+					}, (level - settings.shutters[shutter].level - level)/100*settings.shutterCycleSeconds*1000);
+				}
+		}
+		settings.shutters[shutter].level = level;
+		cacheSettings();
 	}
 }
 
