@@ -101,12 +101,12 @@ function bticinoConnect(monitor, what, id, level) {
 	}
 
 	function send(message) {
-		console.log('S: ' + message);
+		console.log('S: ('+status+')' + message);
 		client.write('*' + message + '##');
 	}
 
 	function received(message) {
-		console.log(" R: " + message);
+		console.log("R: ("+status+")" + message);
 	}
 
 	function processMessages() {
@@ -122,7 +122,7 @@ function bticinoConnect(monitor, what, id, level) {
 			} else if ((matches = message.match(/^1\*(\d+)\*([\d#]+)$/)) && status == 2) {
 				lightStatusUpdate(matches[2], matches[1]);
 			} else if ((matches = message.match(/^2\*(\d+)\*([\d#]+)$/)) && status == 2) {
-				shutterStatusUpdate(matches[2], matches[1]);
+				shutterStatusUpdate(matches[2], parseInt(matches[1]));
 			} else if (message == '#*1' && status == 2){
 				if (!monitor) {
 					// execure command
@@ -141,7 +141,7 @@ function bticinoConnect(monitor, what, id, level) {
 									bLevel = 1;
 									break;
 								default:
-									blevel = 0;
+									bLevel = 0;
 							}
 							send('2*' + bLevel + '*' + id);
 							break;
@@ -172,7 +172,6 @@ function bticinoConnect(monitor, what, id, level) {
 				break;
 			}
 			var message = rawData.substring(1,idx);
-			console.log('R: ' + message);
 			messages.push(message);
 			rawData = rawData.substring(idx+2);
 		}
@@ -283,7 +282,7 @@ app.post('/lights/:light', function(req, res) {
 		var success = false;
 
 		if (req.body && req.body.level && req.body.level.match(/^\d+$/)) {
-			bticinoConnect(false, 'light', req.params.light, req.body.level);
+			bticinoConnect(false, 'light', req.params.light, parseInt(req.body.level));
 			success = true;
 		}
 
@@ -309,22 +308,26 @@ function setShutterLevel(shutter, level, force) {
 		switch(level) {
 			case 0:
 			case 100:
+			case -1:
 				bticinoConnect(false, 'shutter', shutter, level);
 				break;
 			default:
 				// partial
+				console.log("Going from " + settings.shutters[shutter].level + " to " + level)
 				if (settings.shutters[shutter].level > level) {
 					// open a bit
-					bticinoConnect(false, 'shutter', shutter, 100);
+					bticinoConnect(false, 'shutter', shutter, 0);
+					var timeOut = ((settings.shutters[shutter].level - level)/100*settings.shutterCycleSeconds*1000);
 					setTimeout(function() {
 						bticinoConnect(false, 'shutter', shutter, level);
-					}, (settings.shutters[shutter].level - level)/100*settings.shutterCycleSeconds*1000);
+					}, timeOut);
 				} else {
 					// close a bit
-					bticinoConnect(false, 'shutter', shutter, 0);
+					bticinoConnect(false, 'shutter', shutter, 100);
+					var timeOut = ((level - settings.shutters[shutter].level)/100*settings.shutterCycleSeconds*1000);
 					setTimeout(function() {
 						bticinoConnect(false, 'shutter', shutter, level);
-					}, (level - settings.shutters[shutter].level - level)/100*settings.shutterCycleSeconds*1000);
+					}, timeOut);
 				}
 		}
 		settings.shutters[shutter].level = level;
@@ -333,12 +336,12 @@ function setShutterLevel(shutter, level, force) {
 }
 
 app.post('/shutters/:shutter', function(req, res) {
-	console.log("POST /shutters/" + req.params.shutter);
+	console.log("POST /shutters/" + req.params.shutter + " to " + req.body.level);
 	if (settings.shutters[req.params.shutter]) {
 		var success = false;
 
-		if (req.body && req.body.level && req.body.level.match(/^\d+$/)) {
-			setShutterLevel(req.params.shutter, req.body.level, true);
+		if (req.body && req.body.level && req.body.level.match(/^[\d\-\.]+$/)) {
+			setShutterLevel(req.params.shutter, parseInt(req.body.level), true);
 			success = true;
 		}
 
@@ -396,7 +399,7 @@ setInterval(refreshConnection, 1000*60*60); // every hour
 
 function refreshWeather() {
 	var url = 'https://api.openweathermap.org/data/2.5/weather?lat='+settings.openWeather.lat+'&lon='+settings.openWeather.lon+'&appid=' + settings.openWeather.apiKey;
-	request(url, { json: true }, (err, res, body) => {
+	request(url, { json: true }, function(err, res, body) {
 		if (err) { 
 			return console.log(err);
 		}
@@ -405,7 +408,7 @@ function refreshWeather() {
 			console.log(JSON.stringify(body));
 			return;
 		}
-		body.weather.forEach( (wo) => {
+		body.weather.forEach( function(wo) {
 			switch(parseInt(wo.id/100)) {
 				case 2:
 				case 3:
@@ -416,7 +419,7 @@ function refreshWeather() {
 		});
 
 		if (shouldClose) {
-			Object.keys(settings.shutters).forEach((shutter) => {
+			Object.keys(settings.shutters).forEach(function(shutter) {
 				setShutterLevel(shutter, 0, false);
 			});
 		}

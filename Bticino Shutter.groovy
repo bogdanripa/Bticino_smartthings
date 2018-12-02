@@ -16,30 +16,43 @@
 
 metadata {
 	definition (name: "Bticino Shutter", namespace: "bogdanripa", author: "Bogdan Ripa") {
-		capability "Switch"
-		capability "Switch Level"
+		capability "Window Shade"
 		capability "Refresh"
+        capability "Switch Level"   // until we get a Window Shade Level capability
+        command "stop"
 		attribute "status", "string"
-		command "refresh"
 	}
     
-	simulator {
-		// TODO: define status and reply messages here
-	}
-
 	tiles (scale: 2) {
-		multiAttributeTile(name:"switch", type: "lighting", width: 6, height: 4, canChangeIcon: true) {
-			tileAttribute ("device.switch", key: "PRIMARY_CONTROL") {
-				attributeState "on", label:'down', action:"switch.off", icon:"st.Home.home9", backgroundColor:"#888888"
-				attributeState "off", label:'up', action:"switch.on", icon:"st.Home.home9", backgroundColor:"#CCCC55"
-				attributeState "error", label:'${name}', action:"switch.off", icon:"st.Home.home9", backgroundColor:"#FFA0DC"
-			}
-			tileAttribute ("device.level", key: "SLIDER_CONTROL") {
-				attributeState "level", action:"switch level.setLevel"
-			}
-		}
-        main(["switch"])
-        details(["switch"])
+        multiAttributeTile(name:"windowShade", type: "lighting", width: 6, height: 4){
+            tileAttribute ("device.windowShade", key: "PRIMARY_CONTROL") {
+                attributeState "open", label:'${name}', action:"close", icon:"st.shades.shade-open", backgroundColor:"#79b821", nextState:"closing"
+                attributeState "closed", label:'${name}', action:"open", icon:"st.shades.shade-closed", backgroundColor:"#ffffff", nextState:"opening"
+                attributeState "partially open", label:'partial', action:"close", icon:"st.shades.shade-open", backgroundColor:"#79b821", nextState:"closing"
+                attributeState "opening", label:'${name}', action:"stop", icon:"st.shades.shade-opening", backgroundColor:"#79b821", nextState:"partially open"
+                attributeState "closing", label:'${name}', action:"stop", icon:"st.shades.shade-closing", backgroundColor:"#ffffff", nextState:"partially open"
+            }
+            tileAttribute ("device.level", key: "SLIDER_CONTROL") {
+                attributeState "level", action:"setLevel"
+            }
+        }
+        
+        standardTile("home", "device.level", width: 2, height: 2, decoration: "flat") {
+            state "default", label: "home", action:"presetPosition", icon:"st.Home.home2"
+        }
+
+        standardTile("refresh", "device.refresh", width: 2, height: 2, inactiveLabel: false, decoration: "flat") {
+            state "default", label:'', action:"refresh.refresh", icon:"st.secondary.refresh", nextState: "disabled"
+            state "disabled", label:'', action:"", icon:"st.secondary.refresh"
+        }
+        
+        preferences {
+            input "preset", "number", title: "Default half-open position (1-100)", defaultValue: 50, required: false, displayDuringSetup: false
+        }
+
+
+        main(["windowShade"])
+        details(["windowShade", "home", "refresh"])
     }
     
 	preferences {
@@ -50,26 +63,36 @@ metadata {
 def initialSetup(gw, device_id, level) {
     state.sw_id = device_id
     state.gw = gw
-    sendEvent(name: "shutter", value: level==2?"on":"off")
+    switch(level) {
+    	case 0:
+		    sendEvent(name: "windowShade", value: "closed")
+            break
+        case 100:
+		    sendEvent(name: "windowShade", value: "open")
+            break
+        default:
+		    sendEvent(name: "windowShade", value: "partially open")
+    }
     sendEvent(name: "level", value: level)
 
     log.debug "Initial level: " + level + " for " + state.sw_id + " calling " + state.gw
 }
 
 def updateLevel(level) {
-    sendEvent(name: "shutter", value: level==2?"on":"off") 
-    sendEvent(name: "level", value: level);//==2?100:0)
+	def status = "partially open"
+    switch(level) {
+        case 0:
+        	status = "closed"
+            break
+        case 100:
+        	status = "open"
+            break
+    }
+    
+    sendEvent(name: "windowShade", value: status)
+    sendEvent(name: "level", value: level)
 
     log.debug "Update level: " + level + " for " + state.sw_id + " calling " + state.gw
-}
-
-def setLevel(userLevel) {
-	return;
-	log.debug "Executing 'userSetLevel' to " + userLevel
-    sendEvent(name: "status", value: "Executing 'userSetLevel' to " + userLevel)
-    sendEvent(name: "switch", value: userLevel>50?"on":"off") 
-    sendEvent(name: "level", value: userLevel)
-    return sendCommand(userLevel>50?"on":"off")
 }
 
 def setGW(gw) {
@@ -87,25 +110,15 @@ def updated() {
 
 def initialize() {
 	log.debug "Initialize Device Handler"
-    //state.level = '0'
-    //state.gw = ''
-    //sendEvent(name: "switch", value: "loading") 
 }
 
-def sendCommand(sw) {
+def sendCommand(level) {
     def id = state.sw_id
-
-    def level    
-    if (sw == 'on') {
-        level = 2
-    }
-    if (sw == 'off') {
-        level = 1
-    }
 
     log.debug "Set level " + level + " on " + state.gw + " for " + id
 
     if (id && state.gw != '') {
+    	log.debug("Sending request")
         def result = new physicalgraph.device.HubAction([
             method: "POST",
             path: "/shutters/" + id.replaceAll(/#/, '%23'),
@@ -113,35 +126,96 @@ def sendCommand(sw) {
                 "HOST": state.gw,
                 "Content-Type": "application/x-www-form-urlencoded"
             ],
-            body: [level: '' + level]], null, [callback: processShutterResponse]
+            body: ["level": '' + level]], null, [callback: processShutterResponse]
         )
 
         return result
     }
 }
 
-def processSwitchResponse(response) {
+def processShutterResponse(response) {
+	log.debug("Request completed: " + response.status)
     if (response.status != 200) {
-        sendEvent(name: "switch", value: "error")
+    	log.debug("Error: " + error)
+        sendEvent(name: "windowShade", value: "error")
         sendEvent(name: "status", value: "Response has error: ${response.body} with status: ${response.status}")
     }
 }
 
 // handle commands
-def on() {
-	log.debug "Executing 'on'"
-    sendEvent(name: "status", value: "Executing 'on'")
-    sendEvent(name: "switch", value: "on") 
-    return sendCommand("on")
+
+def closed() {
+	log.debug "Executed 'close'"
+    unschedule()
+    sendEvent(name: "windowShade", value: "closed")
+    sendEvent(name: "level", value: 0)
 }
 
-def off() {
-	log.debug "Executing 'off'"
-    sendEvent(name: "status", value: "Executing 'off'")
-    sendEvent(name: "switch", value: "off") 
-    return sendCommand("off")
+def doClose() {
+	log.debug "Executing 'close'"
+    sendEvent(name: "status", value: "Executing 'close'")
+    unschedule()
+    runIn(18, closed)
+    return sendCommand(0)
+}
+
+def close() {
+	return doClose()
+}
+
+def opened() {
+	log.debug "Executed 'open'"
+    unschedule()
+    sendEvent(name: "windowShade", value: "open")
+    sendEvent(name: "level", value: 100)
+}
+
+def doOpen() {
+	log.debug "Executing 'open'"
+    sendEvent(name: "status", value: "Executing 'open'")
+    unschedule()
+    runIn(18, opened)
+    return sendCommand(100)
+}
+
+def open() {
+	return doOpen()
+}
+
+def stop() {
+	log.debug "Executing 'stop'"
+    sendEvent(name: "status", value: "Executing 'stop'")
+    unschedule()
+    return sendCommand(-1)
 }
 
 def loading() {
 	log.debug "Loading..."
+}
+
+def setLevel(userLevel) {
+// 18 seconds
+	log.debug "Executing 'userSetLevel' to " + userLevel
+
+	sendEvent(name: "status", value: "Executing 'userSetLevel' to " + userLevel)    
+    sendEvent(name: "level", value: userLevel)
+    
+    if (userLevel == 100 || userLevel == "100") {
+    	log.debug "doOpen"
+
+    	return doOpen()
+    }
+    
+    if (userLevel == 0 || userLevel == "0") {
+    	log.debug "doClose"
+
+		return doClose()
+    }
+    
+    sendEvent(name: "windowShade", value: "partially open")
+    return sendCommand(userLevel)
+}
+
+def presetPosition() {
+    return setLevel(preset ?: state.preset ?: 50)
 }
