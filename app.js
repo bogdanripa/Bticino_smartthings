@@ -29,6 +29,7 @@ var settings = {
 		lon: ''
 	}
 };
+
 try {
 	settings = require('./settings.json');
 } catch(e) {
@@ -36,7 +37,6 @@ try {
 }
 
 var connected = false;
-
 
 function bticinoConnect(monitor, what, id, level) {
 	var messages =[];
@@ -398,6 +398,11 @@ function refreshConnection() {
 setInterval(refreshConnection, 1000*60*60); // every hour
 
 function refreshWeather() {
+	if (timer2 > 0) {
+		timer2--;
+		return;
+	}
+	console.log("Refreshing Weather");
 	var url = 'https://api.openweathermap.org/data/2.5/weather?lat='+settings.openWeather.lat+'&lon='+settings.openWeather.lon+'&appid=' + settings.openWeather.apiKey;
 	request(url, { json: true }, function(err, res, body) {
 		if (err) { 
@@ -416,9 +421,25 @@ function refreshWeather() {
 				case 6:
 					shouldClose = true;
 			}
+
+			if (wo.id % 10 == 0) {
+				// light
+				if (body.wind.speed < 10) {
+					// low speed
+					shouldClose = false;
+				}
+			} else if (wo.id % 10 == 1) {
+				// normal
+				if (body.wind.speed < 5) {
+					// low speed
+					shouldClose = false;
+				}
+			}
 		});
 
+
 		if (shouldClose) {
+			timer2 = 6*60/5;
 			Object.keys(settings.shutters).forEach(function(shutter) {
 				setShutterLevel(shutter, 0, false);
 			});
@@ -427,6 +448,7 @@ function refreshWeather() {
 	});
 }
 
+var timer2 = 0;
 setInterval(refreshWeather, 1000*60*5); // every 5 minutes
 refreshWeather();
 
