@@ -62,6 +62,11 @@ function bticinoConnect(monitor, what, id, level) {
 				type: 'switch'
 			};
 		}
+
+		if (settings.lights[id].level != level) {
+			console.log("Received new light level: " + id + " set to " + level);
+		}
+
 		settings.lights[id].level = level;
 
 		if (settings.lights[id].type == 'switch' && level > 1) {
@@ -93,6 +98,10 @@ function bticinoConnect(monitor, what, id, level) {
 				} else {
 					level = settings.shutters[id].level;
 				}
+		}
+
+		if (settings.shutters[id].level != level) {
+			console.log("Received new shutter level: " + id + " set to " + level);
 		}
 
 		settings.shutters[id].level = level;
@@ -414,6 +423,9 @@ function refreshWeather() {
 			return;
 		}
 		body.weather.forEach( function(wo) {
+			if (shouldClose) {
+				return;
+			}
 			switch(parseInt(wo.id/100)) {
 				case 2:
 				case 3:
