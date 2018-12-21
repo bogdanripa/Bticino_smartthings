@@ -16,25 +16,7 @@ function cacheSettings() {
 	fs.writeFile(settingsFile, json);
 }
 
-var settings = {
-	gwIP: '192.168.86.95',
-	gwPort: 20000,
-	gwPwd: '12345',
-	lights: {},
-	shutters: {},
-	shutterCycleSeconds: 10,
-	openWeather: {
-		apiKey: '',
-		lat: '',
-		lon: ''
-	}
-};
-
-try {
-	settings = require('./settings.json');
-} catch(e) {
-	cacheSettings();
-}
+var settings = require('./settings.json');
 
 var connected = false;
 
@@ -61,6 +43,7 @@ function bticinoConnect(monitor, what, id, level) {
 				name: 'Light ' + (Object.keys(settings.lights).length + 1),
 				type: 'switch'
 			};
+			cacheSettings();
 		}
 
 		if (settings.lights[id].level != level) {
@@ -71,9 +54,9 @@ function bticinoConnect(monitor, what, id, level) {
 
 		if (settings.lights[id].type == 'switch' && level > 1) {
 			settings.lights[id].type = 'dimmer';
+			cacheSettings();
 		}
 
-		cacheSettings();
 	}
 
 	function shutterStatusUpdate(id, level) {
@@ -83,6 +66,7 @@ function bticinoConnect(monitor, what, id, level) {
 				type: 'shutter',
 				level: -1
 			};
+			cacheSettings();
 		}
 
 		switch(level) {
@@ -106,7 +90,6 @@ function bticinoConnect(monitor, what, id, level) {
 
 		settings.shutters[id].level = level;
 
-		cacheSettings();
 	}
 
 	function send(message) {
@@ -237,7 +220,6 @@ app.post('/set', function(req, res) {
 	}
 
 	if (success) {
-		cacheSettings();
 		res.sendStatus(200);
 	} else {
 		res.sendStatus(404);
@@ -297,7 +279,6 @@ app.post('/lights/:light', function(req, res) {
 
 		if (req.body && req.body.name) {
 			settings.lights[req.params.light].name = req.body.name;
-			cacheSettings();
 			success = true;
 		}
 
@@ -340,7 +321,6 @@ function setShutterLevel(shutter, level, force) {
 				}
 		}
 		settings.shutters[shutter].level = level;
-		cacheSettings();
 	}
 }
 
@@ -356,7 +336,6 @@ app.post('/shutters/:shutter', function(req, res) {
 
 		if (req.body && req.body.name) {
 			settings.shutters[req.params.shutter].name = req.body.name;
-			cacheSettings();
 			success = true;
 		}
 
