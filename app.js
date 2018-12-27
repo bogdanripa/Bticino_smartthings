@@ -198,7 +198,71 @@ function bticinoConnect(monitor, what, id, level) {
 pConnect = bticinoConnect(true);
 
 app.get('/', function(req, res) {
-	res.send('Hello World!');
+	res.send('<form method="POST"><h1>BTicino MyHome Play Login</h1><div>E-mail:<input type="text" name="email"/></div><div>Password:<input type="password" name="pwd"/></div><input type="submit"/></form>');
+});
+
+app.get('/setup/plants/:plantId', function(req, res) {
+	request({
+		method: "GET",
+		headers: {'Content-Type': 'application/json', auth_token: req.query.auth_token},
+		url: "https://www.myhomeweb.com/mhp/plants/" + req.params.plantId + "/mhplaygw"
+	}, function(err, res2, body) {
+		try {
+			body = JSON.parse(body);
+		}catch(e) {
+			console.log(err);
+			console.log(body);
+			res.send("Error...");
+			return;
+		}
+		body.forEach(function(plant) {
+			settings.gwPwd = plant.PswOpen;
+			cacheSettings();
+			refreshConnection();
+			res.send("All good!");
+		});
+	});
+});
+
+function getPlants(auth_token, res) {
+	request({
+		method: "GET",
+		headers: {'Content-Type': 'application/json', auth_token: auth_token},
+		url: "https://www.myhomeweb.com/mhp/plants"
+	}, function(err, res2, body) {
+		try {
+			body = JSON.parse(body);
+		}catch(e) {
+			body = {};
+		}
+		var txt = "<h1>Select a location:</h1><ul>";
+		body.forEach(function(plant) {
+			if (plant.Enabled == 1) {
+				txt += '<li><a href="/setup/plants/' + plant.PlantId + '?auth_token=' + encodeURIComponent(auth_token) + '">'+plant.PlantName+'</a></li>';
+			}
+		});
+		txt += "</ul>";
+
+		res.send(txt);
+	});
+}
+
+app.post('/', function(req, res) {
+
+	request({
+				method: "POST",
+				url: "https://www.myhomeweb.com/mhp/users/sign_in",
+				headers: {'Content-Type': 'application/json'},
+				body: JSON.stringify({"username":req.body.email,"pwd":req.body.pwd})
+			}, 
+			function(err, res2, body) {
+				if(res2.headers.auth_token) {
+					getPlants(res2.headers.auth_token, res);
+				} else {
+					res.send("Login Failed...");
+				}
+			}
+		);
 });
 
 app.post('/set', function(req, res) {
