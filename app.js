@@ -20,6 +20,7 @@ var settings = require('./settings.json');
 
 var connected = false;
 
+
 function bticinoConnect(monitor, what, id, level) {
 	var messages =[];
 	var rawData = '';
@@ -38,6 +39,7 @@ function bticinoConnect(monitor, what, id, level) {
 	}
 
 	function lightStatusUpdate(id, level) {
+		console.log("Light status update: " + id + " set to " + level);
 		if (!settings.lights[id]) {
 			settings.lights[id] = {
 				name: 'Light ' + (Object.keys(settings.lights).length + 1),
@@ -60,6 +62,7 @@ function bticinoConnect(monitor, what, id, level) {
 	}
 
 	function shutterStatusUpdate(id, level) {
+		console.log("Shutter status update: " + id + " set to " + level);
 		if (!settings.shutters[id]) {
 			settings.shutters[id] = {
 				name: 'Shutter ' + (Object.keys(settings.shutters).length + 1),
@@ -69,6 +72,7 @@ function bticinoConnect(monitor, what, id, level) {
 			cacheSettings();
 		}
 
+		return;
 		switch(level) {
 			case 1:
 				level = 100;
@@ -84,11 +88,12 @@ function bticinoConnect(monitor, what, id, level) {
 				}
 		}
 
-		if (settings.shutters[id].level != level) {
-			console.log("Received new shutter level: " + id + " set to " + level);
+		if (level == 0 || level == 100) {
+			if (settings.shutters[id].level != level) {
+				console.log("Received new shutter level: " + id + " set to " + level);
+			}
+			settings.shutters[id].level = level;
 		}
-
-		settings.shutters[id].level = level;
 
 	}
 
@@ -359,6 +364,8 @@ app.post('/lights/:light', function(req, res) {
 function setShutterLevel(shutter, level, force) {
 	if (force || settings.shutters[shutter].level != level) {
 		console.log("Setting " + shutter + " shutter level to " + level);
+		if (level > 0 && level < 5) level = 0;
+settings.shutterCycleSeconds = 14;
 		switch(level) {
 			case 0:
 			case 100:
