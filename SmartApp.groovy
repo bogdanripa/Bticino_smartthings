@@ -85,17 +85,21 @@ void processGetListResponse(response) {
         def d
         try {
         	d = devices."${it.key}"
-        } catch(e){}
+        } catch(e){
+        	log.debug "Error ${e}"
+        }
     	if (d) {
             d.name = it.value.name
             d.level = it.value.level
             d.type = it.value.type
         } else {
+        	log.debug "Adding ${it.key} ${it.value.type} as ${it.value.name}"
 	        devices << ["${it.key}": it.value]
         }
         def cd = getChildDevice(it.key)
         if (cd) {
-        	cd.updateLevel(Integer.parseInt(it.value.level))
+        	//log.debug it.value.level
+        	cd.updateLevel(it.value.level)
         }
 	}
 }
@@ -155,7 +159,7 @@ def addDevices() {
 				"label": selectedDevice.name,
                 "completedSetup": true
 			])
-            d.initialSetup(searchTarget, dni, Integer.parseInt(selectedDevice.level))
+            d.initialSetup(searchTarget, dni, selectedDevice.level)
 		} else {
 			log.debug "Updating Bticino Device with id: ${dni} on " + location.hubs[0].id + " calling " + searchTarget
             d.setGW(searchTarget)

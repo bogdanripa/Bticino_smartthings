@@ -60,25 +60,22 @@ def initialSetup(gw, device_id, level) {
 }
 
 def updateLevel(level) {
-	if (level == 1) {
-    	level = 10
-    }
     sendEvent(name: "switch", value: level==0?"off":"on") 
-    sendEvent(name: "level", value: level*10)
 
-    log.debug "Update level: " + level + " for " + state.sw_id + " calling " + state.gw
+	if (level != 0) {
+    	sendEvent(name: "level", value: level)
+    }
+
+	log.debug "Update level: " + level + " for " + state.sw_id + " calling " + state.gw
 }
 
 def setLevel(level) {
-	if (level < 20 && level > 0) {
-        	level = 20
-    }
-	level = Integer.valueOf((level / 10).intValue())
 	log.debug "Executing 'userSetLevel'"
     sendEvent(name: "status", value: "Executing 'userSetLevel'")
     sendEvent(name: "switch", value: level=='0'?"off":"on") 
-    sendEvent(name: "level", value: level*10)
-    return sendCommand()
+    sendEvent(name: "level", value: level)
+
+	return sendCommand()
 }
 
 def setGW(gw) {
@@ -106,21 +103,16 @@ def sendCommand() {
     def level = device.latestValue("level") as Integer
     def sw = device.latestValue("switch") as String
     
+    if (level == 0) level = 1;
+    if (level == 100) level = 99;
+    
     if (sw == 'off') {
     	level = 0
     }
     
-    if (sw == 'on' && level == 0) {
-    	level = 100;
-        sendEvent(name: "level", value: level)
-    }
-
 	log.debug "Set level " + level + " on " + state.gw + " for " + id
 
 	if (id && state.gw != '') {
-        if (level == 100) {
-        	level = 10
-        }
         def result = new physicalgraph.device.HubAction([
             method: "POST",
             path: "/lights/" + id.replaceAll(/#/, '%23'),
@@ -128,7 +120,7 @@ def sendCommand() {
                 "HOST": state.gw,
                 "Content-Type": "application/x-www-form-urlencoded"
             ],
-            body: [level: '' + level/10]], null, [callback: processSwitchResponse]
+            body: [level: '' + level]], null, [callback: processSwitchResponse]
         )
 
         return result
@@ -147,6 +139,12 @@ def on() {
 	log.debug "Executing 'on'"
     sendEvent(name: "status", value: "Executing 'on'")
     sendEvent(name: "switch", value: "on") 
+    
+    def level = device.latestValue("level") as Integer
+    if (level == 0) {
+    	sendEvent(name: "level", value: 100)
+    }
+    
     return sendCommand()
 }
 
@@ -154,6 +152,7 @@ def off() {
 	log.debug "Executing 'off'"
     sendEvent(name: "status", value: "Executing 'off'")
     sendEvent(name: "switch", value: "off") 
+    
     return sendCommand()
 }
 
