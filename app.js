@@ -39,6 +39,7 @@ function bticinoConnect(monitor, what, id, level) {
 	}
 
 	function lightStatusUpdate(id, level) {
+		level *= 10;
 		console.log("Light status update: " + id + " set to " + level);
 		if (!settings.lights[id]) {
 			settings.lights[id] = {
@@ -342,7 +343,10 @@ app.post('/lights/:light', function(req, res) {
 		var success = false;
 
 		if (req.body && req.body.level && req.body.level.match(/^\d+$/)) {
-			bticinoConnect(false, 'light', req.params.light, parseInt(req.body.level));
+			var level = parseInt(req.body.level/10);
+			if (level == 1) level = 2;
+			console.log("Setting light level to " + level);
+			bticinoConnect(false, 'light', req.params.light, level);
 			success = true;
 		}
 
