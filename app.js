@@ -20,8 +20,31 @@ var settings = require('./settings.json');
 
 var connected = false;
 
+function log(msg) {
+	console.log((new Date()).toLocaleTimeString() + " " + msg);
+}
+
+var commFifo = [];
+var lastTimeComm = (new Date()).getTime();
 
 function bticinoConnect(monitor, what, id, level) {
+	var currTimeComm = (new Date()).getTime();
+	if (monitor || currTimeComm - lastTimeComm > 1000) {
+		bticinoConnectDelayed(monitor, what, id, level);
+	} else {
+		commFifo.push({"monitor": monitor, "what": what, "id": id, "level": level});
+	}
+}
+
+setInterval(function() {
+	if (commFifo.length > 0) {
+		var el = commFifo.pop();
+		bticinoConnectDelayed(el.monitor, el.what, el.id, el.level);
+	}
+}, 1000);
+
+function bticinoConnectDelayed(monitor, what, id, level) {
+	lastTimeComm = (new Date()).getTime();
 	var messages =[];
 	var rawData = '';
 	var status = 0;
@@ -40,7 +63,6 @@ function bticinoConnect(monitor, what, id, level) {
 
 	function lightStatusUpdate(id, level) {
 		level *= 10;
-		console.log("Light status update: " + id + " set to " + level);
 		if (!settings.lights[id]) {
 			settings.lights[id] = {
 				name: 'Light ' + (Object.keys(settings.lights).length + 1),
@@ -48,22 +70,26 @@ function bticinoConnect(monitor, what, id, level) {
 			};
 			cacheSettings();
 		}
+		log("Light status update (" + settings.lights[id].type + "): " + id + " set to " + level);
+
+		if (settings.lights[id].type == 'switch' && level == 10)
+			level = 1;
 
 		if (settings.lights[id].level != level) {
-			console.log("Received new light level: " + id + " set to " + level);
+			log("Received new " + settings.lights[id].type + " light level: " + id + " set to " + level);
+			settings.lights[id].level = level;
 		}
 
-		settings.lights[id].level = level;
-
-		if (settings.lights[id].type == 'switch' && level > 1) {
+		if (settings.lights[id].type == 'switch' && level > 10) {
 			settings.lights[id].type = 'dimmer';
 			cacheSettings();
 		}
 
+		powerAllowance(id, level);
 	}
 
 	function shutterStatusUpdate(id, level) {
-		console.log("Shutter status update: " + id + " set to " + level);
+		log("Shutter status update: " + id + " set to " + level);
 		if (!settings.shutters[id]) {
 			settings.shutters[id] = {
 				name: 'Shutter ' + (Object.keys(settings.shutters).length + 1),
@@ -91,7 +117,7 @@ function bticinoConnect(monitor, what, id, level) {
 
 		if (level == 0 || level == 100) {
 			if (settings.shutters[id].level != level) {
-				console.log("Received new shutter level: " + id + " set to " + level);
+				log("Received new shutter level: " + id + " set to " + level);
 			}
 			settings.shutters[id].level = level;
 		}
@@ -99,12 +125,12 @@ function bticinoConnect(monitor, what, id, level) {
 	}
 
 	function send(message) {
-		console.log('S: ('+status+')' + message);
+		log('S: ('+status+')' + message);
 		client.write('*' + message + '##');
 	}
 
 	function received(message) {
-		console.log("R: ("+status+")" + message);
+		log("R: ("+status+")" + message);
 	}
 
 	function processMessages() {
@@ -179,7 +205,7 @@ function bticinoConnect(monitor, what, id, level) {
 	var client = new net.Socket();
 
 	client.connect(settings.gwPort, settings.gwIP, function() {
-		console.log('Connected');
+		log('Connected');
 	});
 
 	client.on('error', function(err) {
@@ -192,7 +218,7 @@ function bticinoConnect(monitor, what, id, level) {
 	});
 
 	client.on('close', function() {
-		console.log('Connection closed');
+		log('Connection closed');
 		if (monitor) {
 			connected = false;
 		}
@@ -216,8 +242,8 @@ app.get('/setup/plants/:plantId', function(req, res) {
 		try {
 			body = JSON.parse(body);
 		}catch(e) {
-			console.log(err);
-			console.log(body);
+			log(err);
+			log(body);
 			res.send("Error...");
 			return;
 		}
@@ -298,7 +324,7 @@ app.post('/set', function(req, res) {
 });
 
 app.get('/lights/', function(req, res) {
-	console.log("GET /lights/");
+	log("GET /lights/");
 	if (settings.lights) {
 		res.setHeader('Content-Type', 'application/json');
 		res.send(JSON.stringify(settings.lights, null, '\t'));
@@ -308,7 +334,7 @@ app.get('/lights/', function(req, res) {
 });
 
 app.get('/shutters/', function(req, res) {
-	console.log("GET /shutters/");
+	log("GET /shutters/");
 	if (settings.shutters) {
 		res.setHeader('Content-Type', 'application/json');
 		res.send(JSON.stringify(settings.shutters, null, '\t'));
@@ -318,7 +344,7 @@ app.get('/shutters/', function(req, res) {
 });
 
 app.get('/lights/:light', function(req, res) {
-	console.log("GET /lights/" + req.params.light);
+	log("GET /lights/" + req.params.light);
 	if (settings.lights[req.params.light]) {
 		res.setHeader('Content-Type', 'application/json');
 		res.send(JSON.stringify(settings.lights[req.params.light], null, '\t'));
@@ -328,7 +354,7 @@ app.get('/lights/:light', function(req, res) {
 });
 
 app.get('/shutters/:shutter', function(req, res) {
-	console.log("GET /shutters/" + req.params.shutter);
+	log("GET /shutters/" + req.params.shutter);
 	if (settings.shutters[req.params.shutter]) {
 		res.setHeader('Content-Type', 'application/json');
 		res.send(JSON.stringify(settings.shutters[req.params.shutter], null, '\t'));
@@ -337,16 +363,39 @@ app.get('/shutters/:shutter', function(req, res) {
 	}
 });
 
+var paTos = {};
+
+function powerAllowance(light, level) {
+	if (paTos[light] && level == 0) {
+		//log("GPA: Light turned off, canceling power allowance rule for " + light);
+		clearTimeout(paTos[light]);
+		delete paTos[light];
+	} else if (!paTos[light] && level > 0) {
+		//log("GPA: Light turned on or refreshed, setting power allowance rule for " + light);
+		paTos[light] = setTimeout(function() {
+			log("GPA: Power Allowence exceeded for " + light)
+			lightAction(0, light);
+		}, settings.powerAllowance*60*60*1000);
+	}
+}
+
+function lightAction(level, light) {
+	if (settings.lights[light].type == 'switch') {
+		level = parseInt(level)?1:0;
+	} else {
+		level = parseInt(level/10);
+	}
+	log("Setting light level to " + level);
+	bticinoConnect(false, 'light', light, level);
+}
+
 app.post('/lights/:light', function(req, res) {
-	console.log("POST /lights/" + req.params.light);
+	log("POST /lights/" + req.params.light);
 	if (settings.lights[req.params.light]) {
 		var success = false;
 
 		if (req.body && req.body.level && req.body.level.match(/^\d+$/)) {
-			var level = parseInt(req.body.level/10);
-			if (level == 1) level = 2;
-			console.log("Setting light level to " + level);
-			bticinoConnect(false, 'light', req.params.light, level);
+			lightAction(req.body.level, req.params.light);
 			success = true;
 		}
 
@@ -367,9 +416,8 @@ app.post('/lights/:light', function(req, res) {
 
 function setShutterLevel(shutter, level, force) {
 	if (force || settings.shutters[shutter].level != level) {
-		console.log("Setting " + shutter + " shutter level to " + level);
+		log("Setting " + shutter + " shutter level to " + level);
 		if (level > 0 && level < 5) level = 0;
-settings.shutterCycleSeconds = 14;
 		switch(level) {
 			case 0:
 			case 100:
@@ -378,7 +426,7 @@ settings.shutterCycleSeconds = 14;
 				break;
 			default:
 				// partial
-				console.log("Going from " + settings.shutters[shutter].level + " to " + level)
+				log("Going from " + settings.shutters[shutter].level + " to " + level)
 				if (settings.shutters[shutter].level > level) {
 					// open a bit
 					bticinoConnect(false, 'shutter', shutter, 0);
@@ -400,7 +448,7 @@ settings.shutterCycleSeconds = 14;
 }
 
 app.post('/shutters/:shutter', function(req, res) {
-	console.log("POST /shutters/" + req.params.shutter + " to " + req.body.level);
+	log("POST /shutters/" + req.params.shutter + " to " + req.body.level);
 	if (settings.shutters[req.params.shutter]) {
 		var success = false;
 
@@ -465,15 +513,15 @@ function refreshWeather() {
 		timer2--;
 		return;
 	}
-	console.log("Refreshing Weather");
+	log("Refreshing Weather");
 	var url = 'https://api.openweathermap.org/data/2.5/weather?lat='+settings.openWeather.lat+'&lon='+settings.openWeather.lon+'&appid=' + settings.openWeather.apiKey;
 	request(url, { json: true }, function(err, res, body) {
 		if (err) { 
-			return console.log(err);
+			return log(err);
 		}
 		var shouldClose = false;
 		if (!body.weather) {
-			console.log(JSON.stringify(body));
+			log(JSON.stringify(body));
 			return;
 		}
 		body.weather.forEach( function(wo) {
@@ -518,4 +566,4 @@ var timer2 = 0;
 setInterval(refreshWeather, 1000*60*5); // every 5 minutes
 refreshWeather();
 
-app.listen(8080, "0.0.0.0", function() {console.log('Listening on port 8080!')});
+app.listen(8080, "0.0.0.0", function() {log('Listening on port 8080!')});
