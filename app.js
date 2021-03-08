@@ -26,6 +26,7 @@ function log(msg) {
 
 var commFifo = [];
 var lastTimeComm = (new Date()).getTime();
+var lastTimeReset = 0;
 
 function bticinoConnect(monitor, what, id, level) {
 	var currTimeComm = (new Date()).getTime();
@@ -70,15 +71,12 @@ function bticinoConnectDelayed(monitor, what, id, level) {
 			};
 			cacheSettings();
 		}
-		log("Light status update (" + settings.lights[id].type + "): " + id + " set to " + level);
+		log("Light status update (" + settings.lights[id].type + "): " + settings.lights[id].name + " set to " + level);
 
 		if (settings.lights[id].type == 'switch' && level == 10)
 			level = 1;
 
-		if (settings.lights[id].level != level) {
-			log("Received new " + settings.lights[id].type + " light level: " + id + " set to " + level);
-			settings.lights[id].level = level;
-		}
+		settings.lights[id].level = level;
 
 		if (settings.lights[id].type == 'switch' && level > 10) {
 			settings.lights[id].type = 'dimmer';
@@ -116,9 +114,6 @@ function bticinoConnectDelayed(monitor, what, id, level) {
 		}
 
 		if (level == 0 || level == 100) {
-			if (settings.shutters[id].level != level) {
-				log("Received new shutter level: " + id + " set to " + level);
-			}
 			settings.shutters[id].level = level;
 		}
 
@@ -210,6 +205,23 @@ function bticinoConnectDelayed(monitor, what, id, level) {
 
 	client.on('error', function(err) {
 		console.error(err);
+		if ((new Date()).getTime() - lastTimeReset > 600000) {
+			// only reset once every 10 minutes
+			lastTimeReset = (new Date()).getTime();
+			console.error("Resetting router");
+		  request({
+				method: "POST",
+				url: "https://api.smartthings.com/v1/devices/" + settings.stSw + "/commands",
+				headers: {'Authorization': 'Bearer ' + settings.stToken},
+				body: '{"commands": [{"capability": "switch", "command": "off"}]}'
+			}, function(err, res2, body) {
+				if (err) {
+					console.error(err);
+				} else {
+					log("Done");
+				}
+			});
+		}
 	});
 
 	client.on('data', function(data) {
@@ -385,7 +397,7 @@ function lightAction(level, light) {
 	} else {
 		level = parseInt(level/10);
 	}
-	log("Setting light level to " + level);
+	log("Setting " + settings.lights[light].name +  " light level to " + level);
 	bticinoConnect(false, 'light', light, level);
 }
 
@@ -416,7 +428,7 @@ app.post('/lights/:light', function(req, res) {
 
 function setShutterLevel(shutter, level, force) {
 	if (force || settings.shutters[shutter].level != level) {
-		log("Setting " + shutter + " shutter level to " + level);
+		log("Setting " + settings.shutters[shutter].name + " shutter level to " + level);
 		if (level > 0 && level < 5) level = 0;
 		switch(level) {
 			case 0:

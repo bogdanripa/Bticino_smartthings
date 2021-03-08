@@ -2,6 +2,8 @@
         gwIP: '192.168.86.95',
         gwPort: 20000,
         gwPwd: '12345',
+        "stToken": "0000-0000-0000-0000-0000",
+        "stSw": "0000-0000-0000-0000-0000",
         lights: {},
         shutters: {},
         shutterCycleSeconds: 10,
