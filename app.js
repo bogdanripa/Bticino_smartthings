@@ -209,17 +209,18 @@ function bticinoConnectDelayed(monitor, what, id, level) {
 			// only reset once every 10 minutes
 			lastTimeReset = (new Date()).getTime();
 			console.error("Resetting router");
-		  request({
+			request({
 				method: "POST",
 				url: "https://api.smartthings.com/v1/devices/" + settings.stSw + "/commands",
 				headers: {'Authorization': 'Bearer ' + settings.stToken},
 				body: '{"commands": [{"capability": "switch", "command": "off"}]}'
 			}, function(err, res2, body) {
 				if (err) {
-					console.error(err);
+					log(err);
 				} else {
 					log("Done");
 				}
+				setTimeout(function(){process.exit(1);}, 1000);
 			});
 		}
 	});
@@ -518,7 +519,7 @@ function refreshConnection() {
 	
 }
 
-setInterval(refreshConnection, 1000*60*60); // every hour
+//setInterval(refreshConnection, 1000*60*60); // every hour
 
 function refreshWeather() {
 	if (timer2 > 0) {
