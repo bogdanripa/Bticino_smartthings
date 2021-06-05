@@ -24,10 +24,29 @@ function log(msg) {
 	console.log((new Date()).toLocaleTimeString() + " " + msg);
 }
 
+var lastTimeReset = 0;
+function resetRouter() {
+	if ((new Date()).getTime() - lastTimeReset > 600000) {
+		// only reset once every 10 minutes
+		lastTimeReset = (new Date()).getTime();
+		log("Resetting router");
+		request({
+			method: "POST",
+			url: "https://api.smartthings.com/v1/devices/" + settings.stSw + "/commands",
+			headers: {'Authorization': 'Bearer ' + settings.stToken},
+			body: '{"commands": [{"capability": "switch", "command": "off"}]}'
+		}, function(err, res2, body) {
+			if (err) {
+				log(err);
+			} else {
+				log("Done resetting router");
+			}
+		});
+	}
+}
+
 var commFifo = [];
 var lastTimeComm = (new Date()).getTime();
-var lastTimeReset = 0;
-
 function bticinoConnect(monitor, what, id, level) {
 	var currTimeComm = (new Date()).getTime();
 	if (monitor || currTimeComm - lastTimeComm > 1000) {
@@ -204,25 +223,8 @@ function bticinoConnectDelayed(monitor, what, id, level) {
 	});
 
 	client.on('error', function(err) {
-		console.error(err);
-		if ((new Date()).getTime() - lastTimeReset > 600000) {
-			// only reset once every 10 minutes
-			lastTimeReset = (new Date()).getTime();
-			console.error("Resetting router");
-			request({
-				method: "POST",
-				url: "https://api.smartthings.com/v1/devices/" + settings.stSw + "/commands",
-				headers: {'Authorization': 'Bearer ' + settings.stToken},
-				body: '{"commands": [{"capability": "switch", "command": "off"}]}'
-			}, function(err, res2, body) {
-				if (err) {
-					log(err);
-				} else {
-					log("Done");
-				}
-				setTimeout(function(){process.exit(1);}, 1000);
-			});
-		}
+		log(err);
+		resetRouter();
 	});
 
 	client.on('data', function(data) {
@@ -578,5 +580,6 @@ function refreshWeather() {
 var timer2 = 0;
 setInterval(refreshWeather, 1000*60*5); // every 5 minutes
 refreshWeather();
+resetRouter();
 
 app.listen(8080, "0.0.0.0", function() {log('Listening on port 8080!')});
